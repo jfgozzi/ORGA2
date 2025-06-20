@@ -1,0 +1,59 @@
+1.
+    El modo real es el modo de operación inicial del procesador Intel tras el encendido o un reinicio, diseñado para ser compatible con el Intel 8086. 
+    En este modo, las direcciones de memoria se generan combinando un segmento de 16 bits con un desplazamiento de 16 bits, 
+    lo que permite acceder a un máximo de 1 MB de memoria (20 bits de dirección efectiva). 
+    No ofrece mecanismos de protección: cualquier programa puede acceder libremente a cualquier dirección de memoria, 
+    no existen niveles de privilegio ni soporte para multitarea o paginación. 
+    Por esta razón, se utiliza solo en las primeras etapas del arranque, como durante la ejecución del BIOS. 
+    En contraste, el modo protegido es el modo operativo avanzado introducido con el 80286 y ampliamente utilizado desde el 80386 en adelante. 
+    Permite acceso a hasta 4 GB de memoria lineal usando direccionamiento de 32 bits, 
+    soporta segmentación avanzada mediante tablas como la GDT y la LDT, y habilita protección de memoria entre procesos, 
+    niveles de privilegio (anillos 0 a 3), paginación para implementar memoria virtual y multitarea mediante estructuras como el TSS. 
+    Este modo es esencial para los sistemas operativos modernos, que lo activan poco después del arranque para garantizar seguridad, 
+    estabilidad y aislamiento entre procesos.
+
+2.
+    Aunque técnicamente es posible tener un sistema operativo funcionando en modo real, 
+    en la práctica resultaría extremadamente limitado e inadecuado para las necesidades actuales. 
+    El modo real solo permite acceder a 1 MB de memoria, carece de protección de memoria, no soporta multitarea ni niveles de privilegio, 
+    y no permite implementar memoria virtual ni aprovechar procesadores multicore. 
+    Esto significa que cualquier programa puede corromper la memoria del sistema o de otros programas, 
+    no existe separación entre el código del usuario y del kernel, y no se pueden ejecutar múltiples procesos de forma segura y eficiente.
+    Por estas razones, es necesario realizar el pasaje del modo real al modo protegido durante el arranque. 
+    El modo protegido proporciona segmentación avanzada, paginación, protección de memoria, multitarea y control de privilegios, 
+    lo que permite construir sistemas operativos modernos, seguros y estables. 
+    Todos los sistemas operativos actuales (como Linux o Windows) dependen de estas capacidades, 
+    por lo que permanecer en modo real sería equivalente a intentar gestionar una ciudad moderna con herramientas primitivas.
+
+3.
+    La GDT (Global Descriptor Table) es una tabla de descriptores de segmentos que el procesador utiliza en modo protegido 
+    para definir las características de los segmentos de memoria: su tamaño, ubicación, tipo de acceso y nivel de privilegio. 
+    Cada entrada de la GDT se llama descriptor de segmento y tiene un tamaño de 8 bytes (64 bits).
+
+    Un descriptor de segmento está compuesto por varios campos:
+
+    - **Base (32 bits)**: Dirección base del segmento en memoria. Se construye con 3 partes: Base[15:0], Base[23:16], Base[31:24]. Indica dónde empieza el segmento.
+    - **Limit (20 bits)**: Tamaño del segmento menos uno. Si el bit G (granularity) está en 0, el límite se interpreta en bytes. Si está en 1, se interpreta en bloques de 4 KB.
+    - **G (Granularity)**: Si es 0, el campo Limit se interpreta en bytes. Si es 1, en unidades de 4 KB. Permite definir segmentos de hasta 4 GB.
+    - **P (Present)**: Si es 1, el segmento está presente en memoria. Si es 0, cualquier acceso al segmento genera una excepción.
+    - **DPL (Descriptor Privilege Level)**: Nivel de privilegio del segmento (0 = más privilegiado, 3 = menos privilegiado). Sirve para implementar protección entre modo kernel y modo usuario.
+    - **S (Descriptor Type - System/Code-Data)**: Si es 0, el descriptor es de sistema (como una TSS o LDT). Si es 1, es de código o datos.
+
+    Estos campos permiten al procesador aplicar políticas de protección, aislamiento entre procesos y estructuración de la memoria, fundamentales para el funcionamiento de sistemas operativos modernos.
+
+4.
+    Para un descriptor de segmento de código ejecutable y legible, debemos colocar Type = 0xA (bits 11–8 = 1010), con el bit S = 1 para indicar que es un segmento de código/datos (no de sistema).
+
+6.
+    extern gdt_entry_t gdt[]; declara el arreglo de descriptores que forma la GDT, donde cada entrada define un segmento (código, datos, etc.).
+
+    extern gdt_descriptor_t GDT_DESC; declara una estructura que contiene el tamaño y la dirección de memoria de la GDT, 
+    usada por la instrucción lgdt para cargar la tabla en el procesador.
+
+10.
+    La instrucción LGDT carga en el procesador la dirección y el tamaño de la GDT, 
+    permitiendo que el CPU utilice esa tabla para segmentación en modo protegido. 
+    En el código, esta información está contenida en la estructura gdt_descriptor_t GDT_DESC, 
+    que se inicializa en gdt.c con el tamaño de la tabla gdt[] y su dirección en memoria. 
+    Esta estructura es pasada a LGDT para preparar el salto al modo protegido.
+
