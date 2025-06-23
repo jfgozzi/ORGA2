@@ -1,0 +1,158 @@
+    ---------------------------------------------- Pasaje a modo Protegido ----------------------------------------------
+1.
+    El modo real es el modo de operación inicial del procesador Intel tras el encendido o un reinicio, diseñado para ser compatible con 
+    el Intel 8086. En este modo, las direcciones de memoria se generan combinando un segmento de 16 bits con un desplazamiento de 16 bits, 
+    lo que permite acceder a un máximo de 1 MB de memoria (20 bits de dirección efectiva). 
+    No ofrece mecanismos de protección: cualquier programa puede acceder libremente a cualquier dirección de memoria, 
+    no existen niveles de privilegio ni soporte para multitarea o paginación. 
+    Por esta razón, se utiliza solo en las primeras etapas del arranque, como durante la ejecución del BIOS. 
+    En contraste, el modo protegido es el modo operativo avanzado introducido con el 80286 y ampliamente utilizado desde el 80386 en adelante. 
+    Permite acceso a hasta 4 GB de memoria lineal usando direccionamiento de 32 bits, 
+    soporta segmentación avanzada mediante tablas como la GDT y la LDT, y habilita protección de memoria entre procesos, 
+    niveles de privilegio (anillos 0 a 3), paginación para implementar memoria virtual y multitarea mediante estructuras como el TSS. 
+    Este modo es esencial para los sistemas operativos modernos, que lo activan poco después del arranque para garantizar seguridad, 
+    estabilidad y aislamiento entre procesos.
+
+
+2.
+    Aunque técnicamente es posible tener un sistema operativo funcionando en modo real, 
+    en la práctica resultaría extremadamente limitado e inadecuado para las necesidades actuales. 
+    El modo real solo permite acceder a 1 MB de memoria, carece de protección de memoria, no soporta multitarea ni niveles de privilegio, 
+    y no permite implementar memoria virtual ni aprovechar procesadores multicore. 
+    Esto significa que cualquier programa puede corromper la memoria del sistema o de otros programas, 
+    no existe separación entre el código del usuario y del kernel, y no se pueden ejecutar múltiples procesos de forma segura y eficiente.
+    Por estas razones, es necesario realizar el pasaje del modo real al modo protegido durante el arranque. 
+    El modo protegido proporciona segmentación avanzada, paginación, protección de memoria, multitarea y control de privilegios, 
+    lo que permite construir sistemas operativos modernos, seguros y estables. 
+    Todos los sistemas operativos actuales (como Linux o Windows) dependen de estas capacidades, 
+    por lo que permanecer en modo real sería equivalente a intentar gestionar una ciudad moderna con herramientas primitivas.
+
+
+3.
+    La GDT (Global Descriptor Table) es una tabla de descriptores de segmentos que el procesador utiliza en modo protegido 
+    para definir las características de los segmentos de memoria: su tamaño, ubicación, tipo de acceso y nivel de privilegio. 
+    Cada entrada de la GDT se llama descriptor de segmento y tiene un tamaño de 8 bytes (64 bits).
+
+    Un descriptor de segmento está compuesto por varios campos:
+
+    - **Base (32 bits)**: Dirección base del segmento en memoria. Se construye con 3 partes: Base[15:0], Base[23:16], Base[31:24]. Indica dónde empieza el segmento.
+    - **Limit (20 bits)**: Tamaño del segmento menos uno. Si el bit G (granularity) está en 0, el límite se interpreta en bytes. Si está en 1, se interpreta en bloques de 4 KB.
+    - **G (Granularity)**: Si es 0, el campo Limit se interpreta en bytes. Si es 1, en unidades de 4 KB. Permite definir segmentos de hasta 4 GB.
+    - **P (Present)**: Si es 1, el segmento está presente en memoria. Si es 0, cualquier acceso al segmento genera una excepción.
+    - **DPL (Descriptor Privilege Level)**: Nivel de privilegio del segmento (0 = más privilegiado, 3 = menos privilegiado). Sirve para implementar protección entre modo kernel y modo usuario.
+    - **S (Descriptor Type - System/Code-Data)**: Si es 0, el descriptor es de sistema (como una TSS o LDT). Si es 1, es de código o datos.
+
+    Estos campos permiten al procesador aplicar políticas de protección, aislamiento entre procesos y estructuración de la memoria, fundamentales para el funcionamiento de sistemas operativos modernos.
+
+
+4.
+    Para un descriptor de segmento de código ejecutable y legible, debemos colocar Type = 0xA (bits 11–8 = 1010), con el bit S = 1 para indicar que es un segmento de código/datos (no de sistema).
+
+
+6.
+    extern gdt_entry_t gdt[]; declara el arreglo de descriptores que forma la GDT, donde cada entrada define un segmento (código, datos, etc.).
+
+    extern gdt_descriptor_t GDT_DESC; declara una estructura que contiene el tamaño y la dirección de memoria de la GDT, 
+    usada por la instrucción lgdt para cargar la tabla en el procesador.
+
+
+10.
+    La instrucción LGDT carga en el procesador la dirección y el tamaño de la GDT, permitiendo que el CPU utilice esa tabla para segmentación en modo protegido. 
+    En el código, esta información está contenida en la estructura gdt_descriptor_t GDT_DESC, que se inicializa en gdt.c con el tamaño de la tabla gdt[] y su dirección en memoria. 
+    Esta estructura es pasada a LGDT para preparar el salto al modo protegido.
+
+
+13. Investiguen en el manual de Intel sección 2.5 Control Registers, el registro CR0. ¿Deberíamos modificarlo para pasar a modo protegido? 
+
+    Si, ya que el bit 0, el menos significativo, es el bit de PE (Protection Enable), que ademas habilita como medida de proteccion la 
+    segmentacion por niveles de provilegio.
+
+
+15. Notemos que a continuación debe hacerse un jump far para posicionarse en el código de modo protegido. Miren el volumen 2 de Intel para 
+    ver los distintos tipos de JMPs disponibles y piensen cuál sería el formato adecuado. ¿Qué usarían como selector de segmento?
+
+    Usamos como selector de segmento el selector del segmento de codigo de nivel 0 que definimos antes.
+
+21. Declaren un segmento adicional que describa el área de la pantalla en memoria que pueda ser utilizado sólo por el kernel. ¿Qué tamaño 
+    deberá tener considerando lo descrito en el párrafo anterior? 
+
+    Debera tener (4 * 1024) bytes = 4 KiB, tamaño tipico de buffer de video.
+
+22. Observen el método screen_draw_box en screen.c y la estructura ca en screen.h . ¿Qué creen que hace el método 
+    screen_draw_box? ¿Cómo hace para acceder a la pantalla? ¿Qué estructura usa para representar cada carácter de la 
+    pantalla y cuanto ocupa en memoria?
+
+    Creemos que dibuja una pantalla con las dimenciones que se dan como parametro, asignando a cada pixel el caracter
+    y atributo tambien pasados como parametro. Accede a la pantalla usando el define "VIDEO", que es la direccion fisica 
+    del buffer de video, para castear un puntero a esa posicion. Usa la estructura "ca" definida en screen.h, y ocupa
+    dos bytes.
+
+24. Resumen final, discutan en el grupo qué pasos tuvieron que hacer para activar el procesador en modo protegido. 
+    Repasen todo el código que estuvieron completando y traten de comprenderlo en detalle ¿Qué cosas les parecieron 
+    más interesantes?
+
+    Nos parecio interesante ...
+
+
+    ---------------------------------------------- Interrupciones ----------------------------------------------
+
+1ra 1a. Observen que la macro IDT_ENTRY0 corresponde a cada entrada de la IDT de nivel 0 ¿A qué se refiere cada campo? 
+    ¿Qué valores toma el campo offset?
+
+    Los valores que toma son los de la direccion de memoria donde esta escrito el codigo que maneja la interrupcion.
+
+2da 3.¿Qué oficiaría de prólogo y epílogo de estas rutinas? ¿Qué marca el iret y por qué no usamos ret?
+    Iret marca el retorno del control de programa desde un manejador de interrupciones o excepciones hacia el 
+    procedimiento que fue anteriormente interrumpido, devolviendo a su vez su "contexto" (valor del registro cs, EFLAGS, etc.).
+    La instruccion "ret" unicamente restaura el valor del registro EIP.
+
+
+    ---------------------------------------------- Paginacion ----------------------------------------------
+
+¿Cuántos niveles de privilegio podemos definir en las estructuras de paginación?
+    Se pueden definir 2 niveles de privilegio, el nivel administrador y nivel usuario.
+
+¿Cómo se traduce una dirección lógica en una dirección física? ¿Cómo participan la dirección lógica, el registro de 
+control CR3, el directorio y la tabla de páginas? 
+    Se separa la direccion virtual en 3 partes. Los 10 bits mas significativos se usan para indexar el page-directory, al
+    cual se accede usando los 20 bits mas significativos del registro CR3. Los siguientes 10 bits se usan para indexar 
+    la page-table obtenida de haber accedido al page-directory. Con eso se consigue la direccion base de la pagina en 
+    cuestion, luego con los 12 bits que quedan, se usan como offset sobre la direccion base de la page-table entry.
+
+¿Cuál es el efecto de los siguientes atributos en las entradas de la tabla de página?
+    D: bit "dirty", indica si la pagina fue escrita desde que fue cargada por ultima vez.
+    A: bit "accedida", indica si la pagina fue escrita o leida. 
+    PCD: Controla si se permite usar cache para esa pagina.
+    PWT: Controla como se escriben los datos a memoria cuando se actualiza la cache. 
+    U/S: usuario/supervisor. Si es 0, no puede accederse a ella desde el modo usuario.
+    R/W: lectura/escritura. Si es 0, no se puede escribir sobre ella.
+    P: bit que referencia (si esta en 1) que es una pagina de 4KB.
+
+¿Qué sucede si los atributos U/S y R/W del directorio y de la tabla de páginas difieren? ¿Cuáles terminan siendo 
+los atributos de una página determinada en ese caso? 
+    EL nivel de privilegio de una pagina va a ser de usuario unicamente cuando los privilegios tanto del page-directory
+    como el de la page-table son de usuario, en cualquier otro caso, el privilegio queda como supervisor. Y si la flag 
+    "Write protection" del registro CR0 esta apagada, el acceso de la pagina depende de si el nivel de privilegio queda
+    como usuario (solo lectura) o supervisor (lectura/escritura). Si la flag WP esta en 1, para que sea de lectura/escritura
+    tanto el tipo de acceso de la page-directory entry como page-table entry deben serlo, sino queda como solo lectura.
+
+Suponiendo que el código de la tarea ocupa dos páginas y utilizaremos una página para la pila de la tarea. ¿Cuántas 
+páginas hace falta pedir a la unidad de manejo de memoria para el directorio, tablas de páginas y la memoria de una tarea?
+    Serian dos paginas para el codigo, una para la pila, una para el directorio y otra para la tabla. Total de 5.
+
+¿Qué es el buffer auxiliar de traducción (translation lookaside buffer o TLB) y por qué es necesario purgarlo (tlbflush) 
+al introducir modificaciones a nuestras estructuras de paginación (directorio, tabla de páginas)? ¿Qué atributos posee 
+cada traducción en la TLB? Al desalojar una entrada determinada de la TLB ¿Se ve afectada la homóloga en la tabla original
+para algún caso?
+    Es una chache especializada en traducciones de direcciones virtuales a fisicas, que ahorra el proceso de traduccion
+    de una direccion virtual que ya se realizo y esta guardada ahi. Es necesario "purgarlo" ya que las traducciones que 
+    tenga luego de los cambios podrian quedar obsoletos en el nuevo contexto, dando lugar a errores. Guarda lo mismo que 
+    una page-table entry. No, su omologa original queda sin cambios.
+
+¿por qué es necesario mapear y desmapear las páginas de destino y fuente? ¿Qué función cumplen SRC_VIRT_PAGE y 
+DST_VIRT_PAGE? ¿Por qué es necesario obtener el CR3 con rcr3()?
+    Es necesario ya que al estar activada la paginacion, sin antes mapear las paginas, las direcciones que te dan no 
+    acceden directamente a posiciones de memoria fisica, funcionan simplemente como direcciones virtuales que, al no
+    estar mapeadas a nada, no funcionan. En necesario para poder obtener el registro cr3 directamente desde C, ya que 
+    no se puede hacer de forma directa.
+    
